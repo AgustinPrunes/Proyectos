@@ -1,0 +1,1007 @@
+%% Cargar datos
+% Esta parte lee el archivo .csv que se exporta de Trackmate y guarda la
+% información en una tabla.
+% Modificar nombre del archivo 
+
+clear
+NombreArchivo='/MATLAB Drive/Sec_1_spots.csv';
+tabla=readmatrix(NombreArchivo);
+tabla=tabla(2:end,:);
+
+%% Separar columnas relevantes
+% Se leen solo las columnas que interesan de la tabla. En mi caso además de 
+% posicion, tiempo y número de track también me interesaba la longitud y
+% orientacion de las bacterias, pero eso lo puedes eliminar o comentar.
+
+TrackID=tabla(:,3);
+x=tabla(:,5);
+y=tabla(:,6);
+t=tabla(:,8);
+Major=tabla(:,23);
+Minor=tabla(:,24);
+Theta=tabla(:,25);
+AR=tabla(:,26);
+
+%% Separar tracks
+% Acá se separan los tracks y se guardan en la estructura track
+
+tr=1;
+for ii=0:max(TrackID)
+    [~,orden]=sort(t(TrackID==ii));
+    if isempty(orden)
+        continue
+    end
+    xx=x(TrackID==ii); xx=xx(orden);
+    yy=y(TrackID==ii); yy=yy(orden);
+    tt=t(TrackID==ii); tt=tt(orden)+1;
+    major=Major(TrackID==ii); major=major(orden);
+    minor=Minor(TrackID==ii); minor=minor(orden);
+    theta=Theta(TrackID==ii); theta=theta(orden);
+    ar=AR(TrackID==ii); ar=ar(orden);
+    track(tr).x=xx;
+    track(tr).y=yy;
+    track(tr).t=tt;
+    track(tr).major=major;
+    track(tr).minor=minor;
+    track(tr).theta=theta;
+    track(tr).ar=ar;
+    tr=tr+1;
+    duracion(tr)=length(xx);
+end
+
+%% Graficar tracks
+% Esta parte es solo para revisar que todo esté bien. Se debería ver muy
+% similar a lo que se ve en ImageJ
+
+figure(1), clf
+for tr=1:length(track)
+    plot(track(tr).x,track(tr).y,'o-')
+    title(tr)
+    axis image
+    % axis off
+    axis ij
+    axis([1,2048,1,614])
+    % pause
+end
+
+%% Guardar
+
+save('Tracks_Video_11seg','track')
+
+%% Dx
+
+calibracion=0.1;
+fps=60;
+
+for tr=1:length(track)
+    Dx(tr)=track(tr).x(end)-track(tr).x(1);
+    Dt(tr)=track(tr).t(end)-track(tr).t(1);
+end
+
+figure(1), clf, hold on
+for tr=1:length(track)
+    if Dx(tr)>0
+        plot(track(tr).x,track(tr).y,'b')
+    else
+        plot(track(tr).x,track(tr).y,'r')
+    end
+    axis image
+    axis off
+    axis ij
+    axis([1,2048,1,614])
+end
+
+figure(2), clf
+histogram(Dx./Dt*calibracion*fps)
+xlabel('\Deltax/\Delta t (\mum/s)')
+ylabel('Ocurrencia')
+print -dpdf nombrefig.pdf
+%% Calcular velocidades
+calibracion = 0.1;
+fps = 60;
+
+for tr = 1:length(track)
+    Dx(tr) = track(tr).x(end) - track(tr).x(1);
+    Dt(tr) = track(tr).t(end) - track(tr).t(1);
+end
+
+% Calcular velocidades en µm/s
+velocidades = Dx./Dt * calibracion * fps;
+
+% Calcular valor medio
+velocidad_media = mean(velocidades);
+
+%% Graficar histograma con línea de valor medio
+figure(2), clf
+histogram(velocidades, 'Normalization', 'probability')
+hold on
+
+% Agregar línea punteada en el valor medio
+xline(velocidad_media, '--r', 'LineWidth', 2, ...
+    'Label', sprintf('Media = %.3f µm/s', velocidad_media))
+
+xlabel('\Deltax/\Delta t (µm/s)')
+ylabel('Probabilidad')
+title('Distribución de velocidades')
+grid on
+
+% Opcional: Agregar estadísticas en texto
+text(0.05, 0.95, sprintf('Media = %.3f µm/s\nN = %d tracks', ...
+    velocidad_media, length(track)), ...
+    'Units', 'normalized', 'VerticalAlignment', 'top', ...
+    'BackgroundColor', 'w', 'EdgeColor', 'k')
+
+print -dpdf nombrefig.pdf
+%% Calcular y Graficar Desplazamientos (Delta x)
+calibracion = 0.1; % micras/pixel
+
+% Calcular Dx para cada track (Posición final - Posición inicial)
+Dx_micras = zeros(1, length(track)); % Pre-alocar para velocidad
+for tr = 1:length(track)
+    Dx_pix = track(tr).x(end) - track(tr).x(1);
+    Dx_micras(tr) = Dx_pix * calibracion;
+end
+
+% Calcular valor medio del desplazamiento
+media_Dx = mean(Dx_micras);
+
+figure(2), clf
+% Graficamos el histograma de los desplazamientos
+h = histogram(Dx_micras, 'Normalization', 'probability');
+h.FaceColor = [0.4660 0.6740 0.1880]; % Un color verde para diferenciar
+
+hold on
+% Agregar línea punteada en el valor medio
+xline(media_Dx, '--r', 'LineWidth', 2, ...
+    'Label', sprintf('Media = %.3f \\mum', media_Dx));
+
+% Línea negra en 0 para ver dónde está el centro neutral
+xline(0, '-', 'Color', [0.2 0.2 0.2], 'LineWidth', 1);
+
+xlabel('Desplazamiento Neto \Deltax (\mum)')
+ylabel('Probabilidad')
+title('Distribución de Desplazamientos')
+grid on
+
+% Agregar estadísticas en texto dentro del gráfico
+text(0.05, 0.95, sprintf('Media = %.3f \\mum\nN = %d tracks', ...
+    media_Dx, length(track)), ...
+    'Units', 'normalized', 'VerticalAlignment', 'top', ...
+    'BackgroundColor', 'w', 'EdgeColor', 'k')
+
+print -dpdf Histograma_Desplazamiento.pdf
+
+%% Mapa de Flujo Espacial (Vector Field)
+% Esta sección divide el espacio en una cuadrícula y calcula la dirección
+% promedio de las bacterias en cada zona. Ayuda a ver cómo la geometría
+% de la válvula Tesla afecta el flujo localmente.
+
+% Parámetros de la cuadrícula (Grid)
+bin_size = 32; % Tamaño del bin en píxeles (ajusta según resolución, e.g., 32, 64, 128)
+X_edges = 1:bin_size:2048;
+Y_edges = 1:bin_size:614;
+
+% Inicializar matrices acumuladoras
+SumVx = zeros(length(Y_edges)-1, length(X_edges)-1);
+SumVy = zeros(length(Y_edges)-1, length(X_edges)-1);
+Count = zeros(length(Y_edges)-1, length(X_edges)-1);
+
+% Recorrer todos los tracks para llenar la cuadrícula
+for tr = 1:length(track)
+    % Obtener posiciones y diferencias
+    this_x = track(tr).x;
+    this_y = track(tr).y;
+    
+    % Calcular velocidades instantáneas (dx, dy) entre frames
+    dx = diff(this_x);
+    dy = diff(this_y);
+    
+    % Coordenadas para asignar al bin (usamos el punto medio del paso)
+    mid_x = this_x(1:end-1) + dx/2;
+    mid_y = this_y(1:end-1) + dy/2;
+    
+    % Discretizar posiciones (encontrar en qué casilla cae cada punto)
+    [~, ~, x_bin] = histcounts(mid_x, X_edges);
+    [~, ~, y_bin] = histcounts(mid_y, Y_edges);
+    
+    % Acumular vectores
+    for k = 1:length(dx)
+        if x_bin(k) > 0 && y_bin(k) > 0 % Verificar que esté dentro de los límites
+            row = y_bin(k);
+            col = x_bin(k);
+            SumVx(row, col) = SumVx(row, col) + dx(k);
+            SumVy(row, col) = SumVy(row, col) + dy(k);
+            Count(row, col) = Count(row, col) + 1;
+        end
+    end
+end
+
+% Calcular promedios (evitar división por cero)
+AvgVx = SumVx ./ Count;
+AvgVy = SumVy ./ Count;
+AvgVx(isnan(AvgVx)) = 0;
+AvgVy(isnan(AvgVy)) = 0;
+
+% Generar coordenadas para el gráfico (centros de los bins)
+[X_centers, Y_centers] = meshgrid(...
+    X_edges(1:end-1) + bin_size/2, ...
+    Y_edges(1:end-1) + bin_size/2);
+
+% --- GRAFICAR ---
+figure(4), clf
+hold on
+
+% 1. Opcional: Dibujar un mapa de calor de "Ocupación" (dónde pasaron más tiempo)
+% Esto te dice si las bacterias prefieren ciertas zonas de la válvula.
+imagesc(X_edges, Y_edges, Count);
+colormap(flipud(gray)); % Fondo gris claro donde hay menos datos
+c = colorbar;
+ylabel(c, 'Cantidad de pasos detectados')
+
+% 2. Dibujar los vectores de flujo (Flechas)
+% Scale = ajusta el tamaño de las flechas.
+quiver(X_centers, Y_centers, AvgVx, AvgVy, 2.0, 'r', 'LineWidth', 1.5)
+
+axis image
+axis ij % Invertir eje Y para coincidir con imágenes estándar
+axis([1, 2048, 1, 614])
+title('Campo de Flujo Promedio en la Válvula')
+xlabel('Posición X (px)')
+ylabel('Posición Y (px)')
+
+% Añadir leyenda explicativa
+text(20, 40, 'Flecha Roja = Dirección Promedio', 'Color', 'r', 'FontWeight', 'bold')
+
+print -dpdf Mapa_Flujo_Tesla.pdf
+%% Distribución Angular (Rose Plot) y Eficiencia
+% Este gráfico resume hacia dónde apuntan todas las bacterias en cada instante.
+% Es la mejor forma visual de probar rectificación.
+
+dx_all = [];
+dy_all = [];
+
+% Recopilar todos los movimientos instantáneos
+for tr = 1:length(track)
+    dx_inst = diff(track(tr).x,60); % cambio en x paso a paso
+    dy_inst = diff(track(tr).y,60); % cambio en y paso a paso
+    dx_all = [dx_all; dx_inst];
+    dy_all = [dy_all; dy_inst];
+end
+
+% Calcular ángulos en radianes (-pi a pi)
+angulos = atan2(dy_all, dx_all);
+
+figure(5), clf
+% Histograma polar con 36 divisiones (cada 10 grados)
+p = polarhistogram(angulos, 36); 
+
+title('Distribución de Direcciones de Movimiento')
+% Estética para que se vea profesional
+p.FaceColor = [0.2 0.5 0.9];
+p.FaceAlpha = 0.6;
+p.EdgeColor = 'none';
+%
+%
+conteo_original = p.BinCounts;
+bordes = p.BinEdges;
+centros = (bordes(1:end-1) + bordes(2:end))/2;
+
+% Calculamos el "piso de ruido".
+% Asumimos que la dirección con MENOS flujo representa el ruido base isotrópico.
+
+% ruido_isotropico = min(conteo_original);
+ruido_isotropico = min(conteo_original);
+
+
+% Restamos ese círculo a todos (lo que queda es el exceso direccional puro)
+conteo_rectificado = conteo_original - ruido_isotropico;
+
+% Como polarhistogram a veces es mañoso para plotear conteos directos,
+% usamos polarplot cerrando el círculo manualmente.
+angulos_plot = [centros, centros(1)]; % Repetir el primero para cerrar
+valores_plot = [conteo_rectificado, conteo_rectificado(1)];
+
+polarplot(angulos_plot, valores_plot, 'LineWidth', 2, 'Color', [0.8 0.2 0.2])
+hold on
+
+%% CÁLCULO DE EFICIENCIA 
+
+% Suma neta (lo que avanzaron realmente hacia la derecha/izquierda)
+desplazamiento_neto_x = sum(dx_all); 
+
+% Suma absoluta (lo que caminaron en total, sin importar dirección)
+distancia_total_x = sum(abs(dx_all)); 
+
+% Coeficiente de Rectificación [-1 a 1]
+% Valor positivo: Rectifica a la derecha. 
+% Valor negativo: Rectifica a la izquierda.
+% Cero: No rectifica (movimiento aleatorio).
+rectificacion = desplazamiento_neto_x / distancia_total_x;
+
+fprintf('------------------------------------------------\n');
+fprintf('RESULTADOS DE LA VÁLVULA TESLA:\n');
+fprintf('Coeficiente de Rectificación: %.4f\n', rectificacion);
+if rectificacion > 0
+    fprintf('Diagnóstico: Hay flujo preferencial hacia la DERECHA.\n');
+elseif rectificacion < 0
+    fprintf('Diagnóstico: Hay flujo preferencial hacia la IZQUIERDA.\n');
+else
+    fprintf('Diagnóstico: No hay rectificación observable.\n');
+end
+fprintf('------------------------------------------------\n');
+
+% Guardar gráfico polar
+print -dpdf RosePlot_Direcciones.pdf
+%% --- CÁLCULO DE EFICIENCIA DE RECTIFICACIÓN ---
+
+% dx_all contiene todos los pasitos instantáneos (calculado para el Rose Plot)
+% Si no tienes dx_all calculado, descomenta estas líneas:
+% dx_all = [];
+% for tr=1:length(track), dx_all=[dx_all; diff(track(tr).x)]; end
+
+% Suma neta (cuánto avanzaron realmente hacia la derecha/izquierda)
+desplazamiento_neto_x = sum(dx_all); 
+
+% Suma absoluta (cuánto caminaron en total, el "costo" energético)
+distancia_total_x = sum(abs(dx_all)); 
+
+% Coeficiente [-1 a 1]
+coeficiente_rectificacion = desplazamiento_neto_x / distancia_total_x;
+
+% Imprimir en la consola (Command Window)
+fprintf('------------------------------------------------\n');
+fprintf('EFICIENCIA DE LA VÁLVULA TESLA:\n');
+fprintf('Coeficiente: %.5f\n', coeficiente_rectificacion);
+fprintf('(Positivo = Derecha, Negativo = Izquierda, 0 = Neutro)\n');
+fprintf('------------------------------------------------\n');
+
+% Poner el resultado EN EL GRÁFICO (para que salga en el PDF)
+figure(5) % Aseguramos que estamos en la figura del Rose Plot
+subtitle(sprintf('Eficiencia de Rectificación: %.4f', coeficiente_rectificacion), ...
+    'Color', 'r', 'FontWeight', 'bold');
+
+% Guardar de nuevo con el subtítulo
+print -dpdf RosePlot_con_Dato.pdf
+%%
+% Guardar para rose plot
+save('angulos', 'desplazamiento_neto_x', 'distancia_total_x', 'dy_all', 'dx_all');
+
+%% Graficar Contribución al Tercer Momento (Asimetría)
+% Este gráfico muestra EXACTAMENTE qué velocidades están generando la rectificación.
+% Eje Y positivo = Contribución al flujo hacia adelante (Rectificación).
+% Eje Y negativo = Contribución al contra-flujo (Fugas).
+
+% Recalcular datos necesarios
+Dx_micras = Dx * calibracion;
+velocidades = Dx./Dt * calibracion * fps;
+media_vel = mean(velocidades);
+
+% Crear histograma base para obtener densidades
+[counts, edges] = histcounts(velocidades, 30); % 30 bins
+centers = (edges(1:end-1) + edges(2:end)) / 2;
+
+% Calcular el término cúbico (v - media)^3 ponderado por la cantidad de bacterias
+% Esto nos dice cuánto "pesa" cada velocidad en la asimetría total
+asimetria_local = counts .* (centers - media_vel).^3;
+
+figure(6), clf
+bar(centers, asimetria_local, 'FaceColor', [0.8500 0.3250 0.0980])
+
+hold on
+xline(media_vel, '--k', 'LineWidth', 1.5, 'Label', 'Velocidad Media');
+yline(0, 'k-');
+
+xlabel('Velocidad (\mum/s)')
+ylabel('Contribución a la Asimetría (Arbitrario)')
+title('Origen de la Rectificación (Análisis del 3er Momento)')
+subtitle('Área Arriba = Rectificación | Área Abajo = Fuga')
+grid on
+
+% Calcular el valor total (Skewness) para mostrarlo
+valor_skew = skewness(velocidades);
+text(min(centers), max(asimetria_local)*0.9, ...
+    sprintf('Skewness Total = %.4f', valor_skew), ...
+    'BackgroundColor', 'w', 'EdgeColor', 'k');
+
+print -dpdf Grafico_Tercer_Momento.pdf
+
+%% Guardar:
+% Dx = Desplazamiento en pixeles
+% Dt = Duración en frames
+% velocidades = Velocidad calibrada en um/s
+% Dx_micras = Desplazamiento calibrado en um
+
+save('Dx', 'Dt', 'velocidades', 'Dx_micras');
+
+%% Calcular Tercer Momento Global
+clear
+clc
+
+% 1. Lista de tus archivos
+archivos = {'Dx.mat', 'Dx2.mat', 'Dx3.mat'};
+
+% 2. Variable donde acumularemos todos los datos
+Datos_Totales = [];
+
+% 3. Bucle para cargar y unir
+for k = 1:length(archivos)
+    if isfile(archivos{k})
+        % Cargar el archivo en una estructura temporal
+        temp = load(archivos{k});
+        
+        % Extraer la variable de interés
+        datos_nuevos = temp.Dx_micras; 
+        
+        % Concatenar
+        Datos_Totales = [Datos_Totales, datos_nuevos];
+        
+        fprintf('Cargado %s: %d tracks añadidos.\n', archivos{k}, length(datos_nuevos));
+    else
+        fprintf('Cuidado: El archivo %s no existe.\n', archivos{k});
+    end
+end
+
+%% 4. Cálculos Estadísticos Globales
+
+% A) Asimetría (Skewness) - Adimensional
+% Este es el valor más útil para comparar diseños (independiente de escala)
+Asimetria_Global = skewness(Datos_Totales);
+
+% B) Tercer Momento Central - Con unidades (micras^3)
+Momento3_Global = moment(Datos_Totales, 3);
+
+% C) Media Global (para referencia)
+Media_Global = mean(Datos_Totales);
+
+%% 5. Mostrar Resultados
+fprintf('\n=========================================\n');
+fprintf('RESULTADOS COMBINADOS (N = %d tracks)\n', length(Datos_Totales));
+fprintf('=========================================\n');
+fprintf('Media Global (Rectificación Neta): %.4f micras\n', Media_Global);
+fprintf('Tercer Momento (Raw):              %.4e\n', Momento3_Global);
+fprintf('-----------------------------------------\n');
+fprintf('SKEWNESS (Asimetría) GLOBAL:       %.4f\n', Asimetria_Global);
+fprintf('-----------------------------------------\n');
+
+if Asimetria_Global > 0
+    disp('CONCLUSIÓN: El sistema rectifica preferentemente hacia la DERECHA (Positivo).');
+elseif Asimetria_Global < 0
+    disp('CONCLUSIÓN: El sistema rectifica preferentemente hacia la IZQUIERDA (Negativo).');
+else
+    disp('CONCLUSIÓN: Sistema simétrico (No rectifica).');
+end
+
+%% 6. Graficar la Distribución Total
+figure(10), clf
+histogram(Datos_Totales, 'Normalization', 'probability', 'FaceColor', [0.6 0.2 0.8])
+xline(Media_Global, '--r', 'LineWidth', 2)
+title(['Distribución Combinada (Skewness = ' num2str(Asimetria_Global, '%.3f') ')'])
+xlabel('Desplazamiento (\mum)')
+ylabel('Probabilidad')
+grid on
+
+%% Calcular Tercer Momento Global (Sin Toolbox)
+clear
+clc
+
+% 1. Lista de tus archivos
+archivos = {'Dx.mat', 'Dx2.mat', 'Dx3.mat'};
+
+% 2. Variable donde acumularemos todos los datos
+Datos_Totales = [];
+
+% 3. Bucle para cargar y unir
+for k = 1:length(archivos)
+    if isfile(archivos{k})
+        temp = load(archivos{k});
+
+        % IMPORTANTE: Asegúrate de que el nombre aquí ('Dx_micras')
+        % sea el mismo con el que guardaste. Si guardaste 'Dx', pon 'Dx'.
+        if isfield(temp, 'Dx_micras')
+            datos_nuevos = temp.Dx_micras;
+        elseif isfield(temp, 'Dx') % Intento alternativo si Dx_micras no existe
+            datos_nuevos = temp.Dx;
+        else
+            warning('No se encontró variable Dx o Dx_micras en %s', archivos{k});
+            continue;
+        end
+
+        % Asegurar que sea vector fila para concatenar bien
+        datos_nuevos = reshape(datos_nuevos, 1, []);
+        Datos_Totales = [Datos_Totales, datos_nuevos];
+
+        fprintf('Cargado %s: %d tracks añadidos.\n', archivos{k}, length(datos_nuevos));
+    else
+        fprintf('Cuidado: El archivo %s no existe.\n', archivos{k});
+    end
+end
+
+%% 4. Cálculos Estadísticos MANUALES (Funciona sin Toolbox)
+
+if ~isempty(Datos_Totales)
+
+    % A) Media y Desviación Estándar
+    Media_Global = mean(Datos_Totales);
+    Desv_Std = std(Datos_Totales); % Desviación estándar
+    N = length(Datos_Totales);
+
+    % B) Tercer Momento Central (Numerador)
+    % Promedio de las diferencias al cubo
+    Momento3_Central = sum((Datos_Totales - Media_Global).^3) / N;
+
+    % C) Asimetría (Skewness) - Adimensional
+    % Fórmula: Momento 3 dividido por la desviación estándar al cubo
+    % (Esta es la definición estándar de Fisher-Pearson)
+    Asimetria_Global = Momento3_Central / (Desv_Std^3);
+
+    % --- Mostrar Resultados ---
+    fprintf('\n=========================================\n');
+    fprintf('RESULTADOS COMBINADOS (N = %d tracks)\n', N);
+    fprintf('=========================================\n');
+    fprintf('Media Global (Rectificación Neta): %.4f micras\n', Media_Global);
+    fprintf('-----------------------------------------\n');
+    fprintf('SKEWNESS (Asimetría) GLOBAL:       %.4f\n', Asimetria_Global);
+    fprintf('-----------------------------------------\n');
+
+    if Asimetria_Global > 0
+        disp('CONCLUSIÓN: El sistema rectifica preferentemente hacia la DERECHA (Positivo).');
+    elseif Asimetria_Global < 0
+        disp('CONCLUSIÓN: El sistema rectifica preferentemente hacia la IZQUIERDA (Negativo).');
+    else
+        disp('CONCLUSIÓN: Sistema simétrico (No rectifica).');
+    end
+
+    %% 5. Graficar
+    figure(10), clf
+    histogram(Datos_Totales, 'Normalization', 'probability', 'FaceColor', [0.6 0.2 0.8])
+    hold on
+    xline(Media_Global, '--r', 'LineWidth', 2)
+    xline(0, '-k', 'LineWidth', 1)
+    title(['Distribución Combinada (Skewness = ' num2str(Asimetria_Global, '%.3f') ')'])
+    xlabel('Desplazamiento (\mum)')
+    ylabel('Probabilidad')
+    grid on
+
+else
+    disp('Error: No se cargaron datos. Revisa los nombres de los archivos .mat');
+end
+
+%% Rose Plot total
+
+clear
+clc
+
+% 1. Lista de archivos
+archivos = {'angulos.mat', 'angulos2.mat', 'angulos3.mat'};
+
+% 2. Inicializar acumuladores de pasos crudos
+Total_dx = [];
+Total_dy = [];
+
+% 3. Cargar y concatenar vectores
+for k = 1:length(archivos)
+    if isfile(archivos{k})
+        datos = load(archivos{k});
+
+        % Verificamos si existen las variables crudas
+        if isfield(datos, 'dx_all') && isfield(datos, 'dy_all')
+            % Forzamos que sean columnas con (:), así no importa si
+            % se guardaron como fila o columna, siempre se pegan bien abajo.
+            dx_temp = datos.dx_all(:);
+            dy_temp = datos.dy_all(:);
+
+            % Concatenar a la lista maestra
+            Total_dx = [Total_dx; dx_temp];
+            Total_dy = [Total_dy; dy_temp];
+
+            fprintf('Archivo %s: Cargados %d pasos instantáneos.\n', ...
+                archivos{k}, length(dx_temp));
+        else
+            warning('El archivo %s no tiene "dx_all" o "dy_all". Se salta.', archivos{k});
+        end
+    else
+        warning('Archivo %s no encontrado.', archivos{k});
+    end
+end
+
+%% 4. Cálculos Globales (Recalculando todo desde cero)
+
+if ~isempty(Total_dx)
+    % A) Calcular todos los ángulos de nuevo (en Radianes)
+    % atan2 es mejor que atan porque maneja los 4 cuadrantes correctamente
+    Angulos_Globales = atan2(Total_dy, Total_dx);
+
+    % B) Calcular Eficiencia Global Ponderada
+    % Sumamos todo lo que se avanzó (neto) y dividimos por el esfuerzo total
+    Suma_Neta_X = sum(Total_dx);
+    Suma_Absoluta_X = sum(abs(Total_dx));
+
+    Eficiencia = Suma_Neta_X / Suma_Absoluta_X;
+
+    %% 5. Generar Gráfico
+    figure(21), clf
+
+    % polarhistogram espera Radianes por defecto, así que le pasamos directo.
+    % 36 bins = cortes cada 10 grados
+    p = polarhistogram(Angulos_Globales, 36);
+
+    % Estética
+    p.FaceColor = [0.8500 0.3250 0.0980]; % Naranja rojizo para destacar
+    p.FaceAlpha = 0.7;
+    p.EdgeColor = 'none'; % Sin bordes negros para que se vea más limpio
+    conteo_original = p.BinCounts;
+    bordes = p.BinEdges;
+    centros = (bordes(1:end-1) + bordes(2:end))/2;
+
+    % Calculamos el "piso de ruido".
+    % Asumimos que la dirección con MENOS flujo representa el ruido base isotrópico.
+    ruido_isotropico = min(conteo_original);
+
+    % Restamos ese círculo a todos (lo que queda es el exceso direccional puro)
+    conteo_rectificado = conteo_original - ruido_isotropico;
+
+    % Como polarhistogram a veces es mañoso para plotear conteos directos,
+    % usamos polarplot cerrando el círculo manualmente.
+    angulos_plot = [centros, centros(1)]; % Repetir el primero para cerrar
+    valores_plot = [conteo_rectificado, conteo_rectificado(1)];
+
+    polarplot(angulos_plot, valores_plot, 'LineWidth', 2, 'Color', [0.8 0.2 0.2])
+    hold on
+    title('Distribución de Flujo (Global Combinado)')
+
+    % Diagnóstico de color para el texto
+    if Eficiencia > 0
+        texto_res = sprintf('Rectificación POSITIVA (Derecha): %.4f', Eficiencia);
+        col_txt = [0 0.5 0]; % Verde oscuro
+    elseif Eficiencia < 0
+        texto_res = sprintf('Rectificación NEGATIVA (Izquierda): %.4f', Eficiencia);
+        col_txt = [0.8 0 0]; % Rojo oscuro
+    else
+        texto_res = 'Sin Rectificación (0.0000)';
+        col_txt = 'k';
+    end
+
+    subtitle(texto_res, 'Color', col_txt, 'FontWeight', 'bold', 'FontSize', 12);
+
+    % Configurar la grilla polar para que sea más legible
+    rlim([0 max(p.Values)*1.1]); % Dar un poco de aire al borde
+
+    fprintf('\n=== REPORTE FINAL ===\n');
+    fprintf('Total de pasos analizados: %d\n', length(Total_dx));
+    fprintf('Eficiencia Calculada:      %.5f\n', Eficiencia);
+
+else
+    error('No se pudieron cargar datos. Revisa que tus .mat tengan "dx_all" y "dy_all".');
+end
+
+%% Rose Plot Avanzado: Filtro de Ruido (Time Lag + Sustracción Isotrópica)
+% REQUISITO: Necesitas tener cargada la variable 'track' en el Workspace.
+
+% --- PARÁMETRO DE AJUSTE ---
+% Lag: Cuantos frames saltar.
+% Lag = 1 es lo que tenías antes (mucho ruido).
+% Lag = 5 o 10 suele ser ideal para ver rectificación real.
+Lag = 7;
+
+dx_lagged = [];
+dy_lagged = [];
+
+% 1. Calcular desplazamientos con LAG (Filtro temporal)
+for tr = 1:length(track)
+    x = track(tr).x;
+    y = track(tr).y;
+
+    % Si el track es más corto que el Lag, no sirve, se ignora
+    if length(x) > Lag
+        % Restamos la posición i con la posición i+Lag
+        dx_temp = x(1+Lag:end) - x(1:end-Lag);
+        dy_temp = y(1+Lag:end) - y(1:end-Lag);
+
+        dx_lagged = [dx_lagged; dx_temp];
+        dy_lagged = [dy_lagged; dy_temp];
+    end
+end
+
+% Calcular ángulos filtrados
+angulos_lag = atan2(dy_lagged, dx_lagged);
+
+% --- VISUALIZACIÓN ---
+figure(7), clf
+
+% SUBPLOT 1: Rose Plot con Time Lag (Tu solución 2)
+% Esto reduce el ruido porque los pasos pequeños se cancelan y los largos suman.
+subplot(1,2,1)
+h1 = polarhistogram(angulos_lag, 36);
+title(sprintf('Rose Plot con Lag = %d frames', Lag))
+h1.FaceColor = [0.2 0.6 0.8];
+h1.EdgeColor = 'none';
+h1.FaceAlpha = 0.7;
+
+
+% SUBPLOT 2: Sustracción del "Círculo de Ruido" (Tu solución 1)
+% Tomamos los datos del gráfico anterior y le restamos el ruido de fondo.
+subplot(1,2,2)
+
+% Obtenemos los conteos (bincounts) del histograma anterior
+conteo_original = h1.BinCounts;
+bordes = h1.BinEdges;
+centros = (bordes(1:end-1) + bordes(2:end))/2;
+
+% Calculamos el "piso de ruido".
+% Asumimos que la dirección con MENOS flujo representa el ruido base isotrópico.
+ruido_isotropico = min(conteo_original);
+
+% Restamos ese círculo a todos (lo que queda es el exceso direccional puro)
+conteo_rectificado = conteo_original - ruido_isotropico;
+
+% Como polarhistogram a veces es mañoso para plotear conteos directos,
+% usamos polarplot cerrando el círculo manualmente.
+angulos_plot = [centros, centros(1)]; % Repetir el primero para cerrar
+valores_plot = [conteo_rectificado, conteo_rectificado(1)];
+
+polarplot(angulos_plot, valores_plot, 'LineWidth', 2, 'Color', [0.8 0.2 0.2])
+hold on
+% Rellenar el área para que se vea bonito
+patch(transform_polar_x(angulos_plot, values_plot), ...
+      transform_polar_y(angulos_plot, values_plot), ...
+      [0.8 0.2 0.2], 'FaceAlpha', 0.5, 'EdgeColor', 'none');
+
+% (Nota: Como patch en polar es complejo, una alternativa simple es:)
+fill_polar(angulos_plot, valores_plot, [0.8500 0.3250 0.0980]);
+
+title('Componente Anisotrópica (Ruido Restado)')
+subtitle('Solo muestra el exceso de rectificación')
+
+% Función auxiliar local para rellenar en polar (ponla al final del script o archivo)
+function fill_polar(theta, rho, color)
+    [x, y] = pol2cart(theta, rho);
+    fill(x, y, color, 'FaceAlpha', 0.6, 'EdgeColor', 'r', 'LineWidth', 1.5);
+    % Ajustar ejes para que parezca polar
+    axis equal off
+    % Dibujar círculos de grilla (opcional, para referencia)
+    hold on
+    max_val = max(rho);
+    viscircles([0 0], max_val, 'Color', [0.9 0.9 0.9], 'LineWidth', 0.5);
+end
+
+%% guardar para hacer global con lag
+
+% Guardamos las posiciones crudas. Esto nos da libertad total para
+% elegir cualquier LAG después sin tener que volver a analizar el video.
+
+% Extraemos X e Y de la estructura track a celdas
+Raw_X = {track.x};
+Raw_Y = {track.y};
+
+% Definir nombre (ej. Datos_Raw_Video1.mat)
+NombreMat = strrep(NombreArchivo, '.csv', '_RawTracks.mat');
+if ~contains(NombreMat, '.mat'), NombreMat = [NombreArchivo '_RawTracks.mat']; end
+
+% Guardamos SOLO las posiciones
+save(NombreMat, 'Raw_X', 'Raw_Y');
+
+fprintf('Trayectorias guardadas en: %s\n', NombreMat);
+
+%% Rose Plot global con Lag
+
+clear
+clc
+
+% 1. Configuración
+% Archivos generados en el Paso 1
+archivos = {'Sec_1_spots_RawTracks.mat', 'Sec_1_t2_spots_RawTracks.mat', 'Sec_2_spots_RawTracks.mat'}; 
+
+Lag = 214; % <--- AQUÍ CAMBIAS EL LAG PARA TODOS LOS VIDEOS A LA VEZ
+% Lag pequeño (1-3) = Más datos, pero más ruido.
+% Lag grande (5-10) = Menos datos, pero ves el flujo real neto.
+
+% Inicializar acumuladores globales
+Dx_Global_Lag = [];
+Dy_Global_Lag = [];
+
+%% 2. Carga y Procesamiento
+for k = 1:length(archivos)
+    if isfile(archivos{k})
+        datos = load(archivos{k});
+        
+        % Verificar que existan las celdas
+        if isfield(datos, 'Raw_X') && isfield(datos, 'Raw_Y')
+            mis_X = datos.Raw_X;
+            mis_Y = datos.Raw_Y;
+            
+            % Recorrer cada track de este archivo
+            for t = 1:length(mis_X)
+                track_x = mis_X{t};
+                track_y = mis_Y{t};
+                
+                % Aplicar lógica de LAG
+                if length(track_x) > Lag
+                    % Posición futura - Posición actual
+                    dx_t = track_x(1+Lag:end) - track_x(1:end-Lag);
+                    dy_t = track_y(1+Lag:end) - track_y(1:end-Lag);
+                    
+                    % Acumular en la lista gigante
+                    Dx_Global_Lag = [Dx_Global_Lag; dx_t(:)];
+                    Dy_Global_Lag = [Dy_Global_Lag; dy_t(:)];
+                end
+            end
+            fprintf('Archivo %s cargado.\n', archivos{k});
+        else
+            warning('El archivo %s no tiene Raw_X / Raw_Y.', archivos{k});
+        end
+    else
+        warning('Archivo %s no existe.', archivos{k});
+    end
+end
+
+%% 3. Graficar: Rose Plot con Sustracción de Ruido
+if ~isempty(Dx_Global_Lag)
+    
+    % Calcular ángulos
+    angulos = atan2(Dy_Global_Lag, Dx_Global_Lag);
+    
+    figure(30), clf
+    
+    % --- Gráfico A: Rose Plot Normal (con Lag) ---
+    subplot(1, 2, 1)
+    h = polarhistogram(angulos, 36);
+    h.FaceColor = [0.6 0.6 0.6]; % Gris
+    h.EdgeColor = 'none';
+    title(sprintf('Distribución Total (Lag = %d)', Lag))
+    
+    % --- Gráfico B: Solo Componente Anisotrópica (Sin Ruido) ---
+    subplot(1, 2, 2)
+    
+    % Obtener datos del histograma anterior
+    conteo = h.BinCounts;
+    bordes = h.BinEdges;
+    centros = (bordes(1:end-1) + bordes(2:end)) / 2;
+    
+    % Calcular el piso de ruido (la dirección con menos flujo)
+    ruido_base = min(conteo);
+    
+    % Restar el ruido
+    conteo_limpio = conteo - ruido_base;
+    
+    % Preparar datos para cerrar el círculo visualmente
+    ang_plot = [centros, centros(1)];
+    val_plot = [conteo_limpio, conteo_limpio(1)];
+    
+    % Graficar forma rellena
+    polarplot(ang_plot, val_plot, 'LineWidth', 2, 'Color', [0.8 0.2 0.2])
+    hold on
+    
+    % Relleno de color (Truco para polar fill)
+    [x_poly, y_poly] = pol2cart(ang_plot, val_plot);
+    fill(x_poly, y_poly, [0.85 0.33 0.1], 'FaceAlpha', 0.6, 'EdgeColor', 'none');
+    
+    % Ajustes visuales
+    axis off equal
+    title('Rectificación Neta (Ruido Sustraído)')
+    subtitle(sprintf('Lag: %d frames | Tracks Totales: %d', Lag, length(Dx_Global_Lag)/100)) % aprox
+    
+    % Círculo de referencia
+    viscircles([0 0], max(val_plot), 'Color', [0.9 0.9 0.9], 'LineWidth', 0.5);
+
+else
+    disp('No se encontraron datos para graficar.');
+end
+
+%% ANÁLISIS MAESTRO: Rose Plot + Curva de Eficiencia
+clear
+clc
+
+% 1. Configuración de Archivos
+archivos = {'Sec_1_spots_RawTracks.mat', 'Sec_1_t2_spots_RawTracks.mat', 'Sec_2_spots_RawTracks.mat'}; 
+
+% Variable maestra para guardar TODAS las trayectorias crudas de todos los videos
+% (Necesario para recalcular eficiencias con distintos lags después)
+Master_X = {}; 
+Master_Y = {};
+
+%% 2. Carga y Consolidación de Datos Crudos
+fprintf('Cargando archivos...\n');
+for k = 1:length(archivos)
+    if isfile(archivos{k})
+        datos = load(archivos{k});
+        if isfield(datos, 'Raw_X') && isfield(datos, 'Raw_Y')
+            % Concatenar las celdas de este video a la lista maestra
+            % (Aseguramos que sean columnas para evitar errores de dimensión)
+            Master_X = [Master_X; datos.Raw_X(:)];
+            Master_Y = [Master_Y; datos.Raw_Y(:)];
+            fprintf(' -> %s: OK (%d tracks)\n', archivos{k}, length(datos.Raw_X));
+        end
+    else
+        warning('Archivo %s no encontrado.', archivos{k});
+    end
+end
+fprintf('Total de tracks cargados: %d\n', length(Master_X));
+
+%% 3. Definir Lag y Calcular para el Rose Plot
+Lag_Visual = 214; % Lag para el Rose Plot
+
+Dx_Lagged = [];
+Dy_Lagged = [];
+
+for t = 1:length(Master_X)
+    track_x = Master_X{t};
+    track_y = Master_Y{t};
+    
+    if length(track_x) > Lag_Visual
+        % Calcular desplazamientos con el Lag elegido
+        dx = track_x(1+Lag_Visual:end) - track_x(1:end-Lag_Visual);
+        dy = track_y(1+Lag_Visual:end) - track_y(1:end-Lag_Visual);
+        Dx_Lagged = [Dx_Lagged; dx];
+        Dy_Lagged = [Dy_Lagged; dy];
+    end
+end
+
+% Graficar Rose Plot (Resumido)
+figure(31), clf
+subplot(1,2,1)
+angulos = atan2(Dy_Lagged, Dx_Lagged);
+polarhistogram(angulos, 36, 'FaceColor', [0.6 0.6 0.6], 'EdgeColor', 'none');
+title(sprintf('Rose Plot (Lag = %d)', Lag_Visual));
+
+%% 4. SECCIÓN NUEVA: Gráfico de Eficiencia vs. Lag
+% Aquí calculamos cómo cambia la eficiencia si miramos ventanas de tiempo mayores.
+
+Lags_Prueba = 1:250; % Probaremos del frame 1 al 20
+Eficiencia_Curve = zeros(size(Lags_Prueba));
+
+fprintf('\nCalculando curva de eficiencia...\n');
+
+for k = 1:length(Lags_Prueba)
+    this_lag = Lags_Prueba(k);
+    
+    Suma_Neta = 0;
+    Suma_Absoluta = 0;
+    
+    % Recorremos todos los tracks con el lag actual "k"
+    for t = 1:length(Master_X)
+        tx = Master_X{t};
+        if length(tx) > this_lag
+            dx_temp = tx(1+this_lag:end) - tx(1:end-this_lag);
+            
+            Suma_Neta = Suma_Neta + sum(dx_temp);      % Cuánto avanzó (+ o -)
+            Suma_Absoluta = Suma_Absoluta + sum(abs(dx_temp)); % Cuánto caminó
+        end
+    end
+    
+    % Calcular eficiencia para este Lag
+    if Suma_Absoluta > 0
+        Eficiencia_Curve(k) = Suma_Neta / Suma_Absoluta;
+    else
+        Eficiencia_Curve(k) = 0;
+    end
+end
+
+%% 5. Visualizar la Curva de Eficiencia
+subplot(1,2,2)
+
+% Graficar línea
+plot(Lags_Prueba, Eficiencia_Curve, 'o-', ...
+    'LineWidth', 2, 'Color', [0.85 0.33 0.1], 'MarkerFaceColor', 'w');
+
+hold on
+yline(0, '--k', 'Alpha', 0.5); % Línea de cero para referencia
+grid on
+
+% Estética
+xlabel('Time Lag (frames)');
+ylabel('Eficiencia de Rectificación R_E');
+title('Robustez de la Rectificación');
+subtitle('¿Se mantiene la eficiencia en el tiempo?');
+
+% Interpretar el resultado en el gráfico
+Max_Ef = max(abs(Eficiencia_Curve));
+ylim([-Max_Ef*1.2, Max_Ef*1.2]); % Centrar el 0
+
+% Añadir un texto con el valor máximo alcanzado
+[val_max, idx_max] = max(abs(Eficiencia_Curve));
+signo = sign(Eficiencia_Curve(idx_max));
+text(Lags_Prueba(idx_max), Eficiencia_Curve(idx_max), ...
+    sprintf('  Máx: %.4f', val_max*signo), ...
+    'FontWeight', 'bold');
+
+print -dpdf Analisis_Completo_Eficiencia.pdf
