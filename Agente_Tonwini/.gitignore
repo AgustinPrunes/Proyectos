@@ -1,0 +1,89 @@
+# ==========================================
+# 🛑 CREDENCIALES Y VARIABLES DE ENTORNO (CRÍTICO)
+# ==========================================
+.env
+secretos/
+*.key
+
+# ==========================================
+# 🧠 CEREBRO DEL AGENTE Y BASES DE DATOS
+# ==========================================
+chroma_db/
+conocimiento_grafo.json
+
+# ==========================================
+# 📚 INPUTS DEL USUARIO (BIBLIOGRAFÍA)
+# ==========================================
+bibliografia/*
+!bibliografia/.gitkeep
+bibliografia_escaneada/*
+!bibliografia_escaneada/.gitkeep
+
+# ==========================================
+# 🚀 OUTPUTS GENERADOS E HIPERPARÁMETROS
+# ==========================================
+libro_*/
+guias_in/*
+!guias_in/.gitkeep
+guias_out/*
+!guias_out/.gitkeep
+compendio_preguntas/*
+!compendio_preguntas/.gitkeep
+Pensamientos/*
+!Pensamientos/.gitkeep
+syllabus/*
+!syllabus/.gitkeep
+Errores/*
+!Errores/.gitkeep
+PDFs_guias/*
+!PDFs_guias/.gitkeep
+PDFs_libros/*
+!PDFs_libros/.gitkeep
+
+# Archivos temporales de configuración generados dinámicamente
+temario_bruto.txt
+temas_guia.txt
+programa_generado.txt
+book_structure.json
+guide_structure.json
+
+# Excluir todos los PDFs generados, EXCEPTO el README oficial
+*.pdf
+!README.pdf
+
+# ==========================================
+# 🐍 ENTORNO PYTHON Y CACHÉ
+# ==========================================
+__pycache__/
+*.pyc
+venv/
+env/
+.venv/
+.pytest_cache/
+
+# ==========================================
+# 🖥️ SISTEMA OPERATIVO Y EDITORES (OPEN SOURCE)
+# ==========================================
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+Thumbs.db
+ehthumbs.db
+.vscode/
+.idea/
+*.swp
+
+# ==========================================
+# 📝 RESIDUOS TEMPORALES DE LATEX
+# ==========================================
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.lof
+*.lot
