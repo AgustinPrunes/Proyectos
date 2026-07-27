@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import time
 import re
@@ -18,19 +19,30 @@ def limpiar_nombre_carpeta(texto):
 def ejecutar_curacion_llm(ruta_tex, log_path):
     """
     Invoca al agente de auto-curación de forma segura.
-    Intenta importar la función de llm_corrector, y si falla la firma exacta,
-    lo ejecuta como un subproceso de consola.
+    Prioriza la importación nativa llamando a 'aplicar_correccion'.
+    Si falla, lo ejecuta como un subproceso de consola blindado en el venv.
     """
     try:
         import llm_corrector
-        if hasattr(llm_corrector, 'corregir_error_latex'):
+        
+        # Leemos el contenido del error para pasárselo a la IA (Firma actualizada)
+        mensaje_error = ""
+        if os.path.exists(log_path):
+            with open(log_path, "r", encoding="utf-8") as f:
+                mensaje_error = f.read()
+                
+        if hasattr(llm_corrector, 'aplicar_correccion'):
+            llm_corrector.aplicar_correccion(ruta_tex, mensaje_error)
+        elif hasattr(llm_corrector, 'corregir_error_latex'):
             llm_corrector.corregir_error_latex(ruta_tex, log_path)
         elif hasattr(llm_corrector, 'corregir_latex'):
             llm_corrector.corregir_latex(ruta_tex, log_path)
         else:
-            subprocess.run(["python", "llm_corrector.py", ruta_tex, log_path], check=False)
+            # Blindaje con sys.executable para evitar fuga del venv
+            subprocess.run([sys.executable, "llm_corrector.py", ruta_tex, log_path], check=False)
     except ImportError:
-        subprocess.run(["python", "llm_corrector.py", ruta_tex, log_path], check=False)
+        # Blindaje con sys.executable para evitar fuga del venv
+        subprocess.run([sys.executable, "llm_corrector.py", ruta_tex, log_path], check=False)
 
 def compilar_latex_con_blindaje(directorio_base, archivo_main):
     """
