@@ -15,7 +15,7 @@ import networkx as nx
 # ACTIVAR_REVISION_NIVEL_2: Audita y rediseña zonas al terminar EL LIBRO COMPLETO.
 # (Apagarlos acelera la generación y reduce drásticamente el consumo de tokens)
 ACTIVAR_REVISION_NIVEL_1 = False
-ACTIVAR_REVISION_NIVEL_2 = True
+ACTIVAR_REVISION_NIVEL_2 = False
 
 # CORTACIRCUITOS DE PRODUCCIÓN: Evita el secuestro financiero / drenaje de tokens
 MAX_RETRIES = 5
@@ -31,6 +31,17 @@ def limpiar_nombre_carpeta(texto):
     texto_limpio = re.sub(r'[^a-zA-Z0-9]', '_', texto)
     texto_limpio = re.sub(r'_+', '_', texto_limpio)
     return texto_limpio.strip('_')
+
+def recortar_historial(texto, max_chars=12000):
+    """
+    Mecanismo de Ventana Deslizante (Sliding Window).
+    Evita el Error 429 RESOURCE_EXHAUSTED recortando el historial masivo.
+    Solo envía los últimos `max_chars` al LLM para mantener coherencia
+    sin drenar la cuota de tokens por minuto.
+    """
+    if len(texto) <= max_chars:
+        return texto
+    return "\n...[TEXTO HISTÓRICO ANTERIOR OMITIDO PARA AHORRO DE MEMORIA]...\n" + texto[-max_chars:]
 
 def buscar_contexto(query, n_results=8):
     """Consulta el Cerebro Híbrido (Vectorial + Semántico) a nivel MACRO."""
@@ -192,9 +203,12 @@ def generar_subseccion_completa(instrucciones_agrupadas, nivel, texto_acumulado_
     (Tu redacción final en LaTeX puro crudo)
     ```"""
 
+    # Aplicamos la ventana deslizante para evitar el 429 Error
+    historial_recortado = recortar_historial(texto_absolute_previo)
+
     user_prompt = f"""
-    --- HISTORIAL DE CAPÍTULOS ANTERIORES (TEXTO EXACTO) ---
-    {texto_absolute_previo if texto_absolute_previo.strip() else "[Este es el primer capítulo del libro]"}
+    --- HISTORIAL DE CAPÍTULOS ANTERIORES (CONTEXTO RECIENTE) ---
+    {historial_recortado if historial_recortado.strip() else "[Este es el primer capítulo del libro]"}
     
     --- TEXTO ACUMULADO DEL CAPÍTULO ACTUAL ---
     {texto_acumulado_capitulo if texto_acumulado_capitulo.strip() else "[Inicio del capítulo]"}
@@ -242,8 +256,9 @@ def generar_subseccion_completa(instrucciones_agrupadas, nivel, texto_acumulado_
 
             error_msg = str(e).lower()
             if "429" in error_msg or "quota" in error_msg or "exhausted" in error_msg:
-                print(f"   ⏳ Límite de API alcanzado. Intento {intentos}/{MAX_RETRIES}. Esperando 60s...")
-                time.sleep(60)
+                # Incrementado a 90s para mitigar cuellos de botella de API reales
+                print(f"   ⏳ Límite de API alcanzado. Intento {intentos}/{MAX_RETRIES}. Esperando 90s...")
+                time.sleep(90)
             elif "503" in error_msg or "unavailable" in error_msg:
                 print(f"   🔥 Servidor saturado (503). Intento {intentos}/{MAX_RETRIES}. Esperando 15s...")
                 time.sleep(15)
@@ -280,9 +295,12 @@ def planificar_mejoras(historial_previo, capitulo_texto, titulo_contexto, nivel,
     }}
     Si el documento está impecable y no requiere reescritura, devuelve {{"mejoras": []}}."""
 
+    # Aplicamos la ventana deslizante al historial macro
+    historial_recortado = recortar_historial(historial_previo)
+
     user_prompt = f"""
     --- MANUSCRITO / HISTORIAL PREVIO DE REFERENCIA ---
-    {historial_previo if historial_previo.strip() else "[No hay historial previo]"}
+    {historial_recortado if historial_recortado.strip() else "[No hay historial previo]"}
     
     --- BORRADOR DEL TEXTO ACTUAL A AUDITAR ---
     {capitulo_texto}
@@ -312,8 +330,8 @@ def planificar_mejoras(historial_previo, capitulo_texto, titulo_contexto, nivel,
 
             error_msg = str(e).lower()
             if "429" in error_msg or "quota" in error_msg:
-                print(f"   ⏳ Límite de API en Planificador. Intento {intentos}/{MAX_RETRIES}. Esperando 60s...")
-                time.sleep(60)
+                print(f"   ⏳ Límite de API en Planificador. Intento {intentos}/{MAX_RETRIES}. Esperando 90s...")
+                time.sleep(90)
             else:
                 print(f"   ⚠️ Error decodificando mejoras. Intento {intentos}/{MAX_RETRIES}. Reintentando en 15s... ({e})")
                 time.sleep(15)
@@ -358,9 +376,11 @@ def reescribir_zona_con_contexto(historial_previo, capitulo_texto, id_zona, tipo
     (Tu redacción final corregida en LaTeX puro)
     ```"""
 
+    historial_recortado = recortar_historial(historial_previo)
+
     user_prompt = f"""
-    --- MANUSCRITO DE LA OBRA COMPLETA (HISTORIAL PREVIO) ---
-    {historial_previo if historial_previo.strip() else "[Primeros capítulos del libro]"}
+    --- MANUSCRITO DE LA OBRA COMPLETA (HISTORIAL PREVIO RECORTADO) ---
+    {historial_recortado if historial_recortado.strip() else "[Primeros capítulos del libro]"}
     
     --- MANUSCRITO COMPLETO DEL CAPÍTULO ACTUAL (BORRADOR) ---
     {capitulo_texto}
@@ -404,8 +424,8 @@ def reescribir_zona_con_contexto(historial_previo, capitulo_texto, id_zona, tipo
 
             error_msg = str(e).lower()
             if "429" in error_msg or "quota" in error_msg:
-                print(f"   ⏳ Límite de API en Escritor Quirúrgico. Intento {intentos}/{MAX_RETRIES}. Esperando 60s...")
-                time.sleep(60)
+                print(f"   ⏳ Límite de API en Escritor Quirúrgico. Intento {intentos}/{MAX_RETRIES}. Esperando 90s...")
+                time.sleep(90)
             else:
                 print(f"   🚨 Error en reescritura de zona. Intento {intentos}/{MAX_RETRIES}. Reintentando en 15s... ({e})")
                 time.sleep(15)

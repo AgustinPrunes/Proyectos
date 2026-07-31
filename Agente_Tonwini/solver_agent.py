@@ -234,7 +234,22 @@ def evaluar_resolucion_critico(enunciado, resolucion_actor):
                     response_mime_type="application/json"
                 )
             )
-            datos = json.loads(respuesta.text.strip())
+            
+            # --- BLINDAJE JSON QUIRÚRGICO (RESCATE DE LATEX) ---
+            texto_crudo = respuesta.text.strip()
+            texto_crudo = re.sub(r'^```json', '', texto_crudo, flags=re.IGNORECASE)
+            texto_crudo = re.sub(r'```$', '', texto_crudo).strip()
+            texto_crudo = re.sub(r'^```', '', texto_crudo).strip()
+            
+            try:
+                datos = json.loads(texto_crudo)
+            except json.JSONDecodeError:
+                print("      🛡️ Crítico: JSON malformado por caracteres LaTeX. Aplicando saneamiento...")
+                # Escapa las barras invertidas que no sean de secuencias de escape nativas de JSON
+                texto_saneado = re.sub(r'(?<!\\)\\(?![\\/"bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', texto_crudo)
+                datos = json.loads(texto_saneado)
+            # ----------------------------------------------------
+
             return datos.get("aprobado", False), datos.get("critica", "Error de formato en crítica.")
             
         except Exception as e:
@@ -257,8 +272,10 @@ def orquestar_resolucion(json_path):
     with open(json_path, 'r', encoding='utf-8') as f:
         estructura = json.load(f)
         
-    titulo_guia = limpiar_nombre_carpeta(estructura['metadata']['titulo'])
-    titulo_real = estructura['metadata'].get('titulo', 'Guía de Ejercicios')
+    # --- CORTACIRCUITOS DE METADATA (KeyError Fix) ---
+    metadata = estructura.get('metadata', {})
+    titulo_real = metadata.get('titulo', 'Guia_de_Ejercicios')
+    titulo_guia = limpiar_nombre_carpeta(titulo_real)
     
     guias_out_dir = "guias_out"
     os.makedirs(guias_out_dir, exist_ok=True)
