@@ -1,28 +1,10 @@
-# ==========================================
-# 🧠 MODELOS DE IA Y VARIABLES DE ENTORNO
-# ==========================================
-google-genai        # SDK oficial de Google para la API de Gemini
-python-dotenv       # Carga segura de la API Key desde el archivo .env
 
-# ==========================================
-# 🗄️ CEREBRO HÍBRIDO (VECTORIAL Y GRAFOS)
-# ==========================================
-chromadb            # Base de datos vectorial para el filtro RAG
-networkx            # Construcción del grafo semántico de conocimiento
-
-# ==========================================
-# 📄 PROCESAMIENTO DE PDF E INGESTA
-# ==========================================
-pypdf               # Extracción de texto nativo de documentos
-PyPDF2              # Soporte legacy/adicional para lectura de PDFs
-PyMuPDF             # Renderizado de PDFs a imágenes para el módulo OCR (se importa como 'fitz')
-
-# ==========================================
-# 👁️ VISIÓN MULTIMODAL (MÓDULO OCR)
-# ==========================================
-pillow              # Procesamiento de imágenes (se importa como 'PIL')
-
-# ==========================================
-# 🌐 UTILIDADES DE RED
-# ==========================================
-requests            # Manejo de peticiones HTTP subyacentes
+google-genai
+python-dotenv
+chromadb
+networkx
+pypdf
+PyPDF2
+PyMuPDF
+pillow
+requests
